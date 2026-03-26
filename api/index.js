@@ -105,7 +105,15 @@ app.get('/api/health', (req, res) => {
 
 app.get('/api/oauth/authorize-url', async (_req, res) => {
     try {
-        const authUrl = await getAuthCodeUrl(ONEDRIVE_REDIRECT_URI);
+        if (!ONEDRIVE_REDIRECT_URI) {
+            return res.status(500).json({
+                error: 'ONEDRIVE_REDIRECT_URI is not set in environment variables',
+            });
+        }
+        const authUrl = getAuthCodeUrl(ONEDRIVE_REDIRECT_URI);
+        if (!authUrl || typeof authUrl !== 'string') {
+            return res.status(500).json({ error: 'Failed to build authorization URL' });
+        }
         res.json({ authUrl });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -300,16 +308,28 @@ app.get('/api/video-url', async (req, res) => {
     try {
         const { key } = req.query;
         if (!key) return res.status(400).json({ error: 'key parameter required' });
-        if (!S3_BUCKET) return res.status(500).json({ error: 'S3_BUCKET_NAME not configured' });
         if (S3_FOLDER && !key.startsWith(`${S3_FOLDER}/`))
             return res.status(403).json({ error: 'Access denied' });
 
+        const CLOUDFRONT_DOMAIN = process.env.CLOUDFRONT_DOMAIN;
+
+        if (CLOUDFRONT_DOMAIN) {
+            // Serve via CloudFront — supports range requests natively, no expiry
+            const url = `https://${CLOUDFRONT_DOMAIN}/${key}`;
+            return res.json({ url });
+        }
+
+        // Fallback: presigned S3 URL (no CloudFront configured)
+        if (!S3_BUCKET) return res.status(500).json({ error: 'S3_BUCKET_NAME not configured' });
         const url = await getSignedUrl(
             s3Client,
-            new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }),
-            { expiresIn: 3600 }
+            new GetObjectCommand({
+                Bucket: S3_BUCKET,
+                Key: key,
+                // No checksum mode — prevents 416 on range requests
+            }),
+            { expiresIn: 3600, unhoistableHeaders: new Set(['x-amz-checksum-mode']) }
         );
-
         res.json({ url });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -322,13 +342,123 @@ app.get('/api/test-video/:key', async (req, res) => {
         const metadata = await s3Client.send(
             new HeadObjectCommand({ Bucket: S3_BUCKET, Key: fullKey })
         );
-        const url = await getSignedUrl(
-            s3Client,
-            new GetObjectCommand({ Bucket: S3_BUCKET, Key: fullKey }),
-            { expiresIn: 3600 }
-        );
+        const CLOUDFRONT_DOMAIN = process.env.CLOUDFRONT_DOMAIN;
+        const url = CLOUDFRONT_DOMAIN
+            ? `https://${CLOUDFRONT_DOMAIN}/${fullKey}`
+            : await getSignedUrl(
+                s3Client,
+                new GetObjectCommand({ Bucket: S3_BUCKET, Key: fullKey }),
+                { expiresIn: 3600, unhoistableHeaders: new Set(['x-amz-checksum-mode']) }
+            );
         res.json({ key: fullKey, url, metadata });
     } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+
+// ─── OneDrive Browser ─────────────────────────────────────────────────────────
+
+// List files in Xbox Game DVR folder
+app.get('/api/onedrive/files', async (req, res) => {
+    try {
+        const client = await getGraphClient();
+
+        // Get the Xbox Game DVR folder
+        let folder;
+        try {
+            folder = await client.api('/me/drive/root:/Videos/Xbox Game DVR').get();
+        } catch {
+            return res.status(404).json({
+                error: 'Xbox Game DVR folder not found',
+                message: 'Ensure "Videos/Xbox Game DVR" exists in your OneDrive',
+            });
+        }
+
+        // List children, filter to video files only
+        const children = await client
+            .api(`/me/drive/items/${folder.id}/children`)
+            .select('id,name,size,lastModifiedDateTime,file,video')
+            .orderby('lastModifiedDateTime desc')
+            .top(100)
+            .get();
+
+        const videoExtensions = /\.(mp4|mov|avi|mkv|wmv|m4v|webm)$/i;
+
+        const files = (children.value || [])
+            .filter(item => item.file && videoExtensions.test(item.name))
+            .map(item => ({
+                id: item.id,
+                name: item.name,
+                size_bytes: item.size,
+                last_modified: item.lastModifiedDateTime,
+                duration_ms: item.video?.duration || null,
+            }));
+
+        res.json({ count: files.length, files });
+    } catch (err) {
+        if (err.message?.includes('No valid token')) {
+            return res.status(401).json({ error: 'Not authenticated' });
+        }
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// Import a single file from OneDrive → S3 (keeps OneDrive copy)
+app.post('/api/onedrive/import', async (req, res) => {
+    try {
+        const { itemId, filename } = req.body;
+        if (!itemId || !filename) {
+            return res.status(400).json({ error: 'itemId and filename are required' });
+        }
+        if (!S3_BUCKET) {
+            return res.status(500).json({ error: 'S3_BUCKET_NAME not configured' });
+        }
+
+        // Check if already exists in S3
+        const s3Key = S3_FOLDER ? `${S3_FOLDER}/${filename}` : filename;
+        try {
+            await s3Client.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: s3Key }));
+            return res.status(409).json({
+                error: 'Already imported',
+                message: `${filename} already exists in S3`,
+                s3Key,
+            });
+        } catch (headErr) {
+            // 404 = not found = good, proceed with import
+            if (headErr.name !== 'NotFound' && headErr.$metadata?.httpStatusCode !== 404) {
+                throw headErr;
+            }
+        }
+
+        console.log(`Importing from OneDrive: ${filename} (${itemId})`);
+
+        // Download from OneDrive
+        const { buffer, contentType } = await downloadFromOneDrive(itemId);
+
+        // Upload to S3
+        await s3Client.send(
+            new PutObjectCommand({
+                Bucket: S3_BUCKET,
+                Key: s3Key,
+                Body: buffer,
+                ContentType: contentType || 'video/mp4',
+            })
+        );
+
+        console.log(`Imported to S3: ${s3Key}`);
+
+        res.json({
+            success: true,
+            filename,
+            s3Key,
+            message: `${filename} imported successfully`,
+        });
+    } catch (err) {
+        console.error('Import error:', err.message);
+        if (err.message?.includes('No valid token')) {
+            return res.status(401).json({ error: 'Not authenticated' });
+        }
         res.status(500).json({ error: err.message });
     }
 });
@@ -343,7 +473,7 @@ app.get('*', (req, res) => {
 
 if (process.env.NODE_ENV !== 'production') {
     const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => console.log(`🚀 Server running at http://localhost:${PORT}`));
+    app.listen(PORT, () => console.log(`Server running at http://localhost:${PORT}`));
 }
 
 export default app;
