@@ -99,7 +99,10 @@ app.use((req, res, next) => {
 
 // ─── OneDrive helpers ─────────────────────────────────────────────────────────
 
-const ONEDRIVE_REDIRECT_URI = process.env.ONEDRIVE_REDIRECT_URI;
+function getRedirectUri(req) {
+    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    return `${proto}://${req.headers.host}/api/oauth/callback`;
+}
 
 async function getGraphClient() {
     const token = await getAccessToken();
@@ -162,9 +165,9 @@ app.post('/api/auth/logout', (_req, res) => {
 
 // ─── OAuth (OneDrive) ─────────────────────────────────────────────────────────
 
-app.get('/api/oauth/authorize-url', (_req, res) => {
+app.get('/api/oauth/authorize-url', (req, res) => {
     try {
-        const authUrl = getAuthCodeUrl(ONEDRIVE_REDIRECT_URI);
+        const authUrl = getAuthCodeUrl(getRedirectUri(req));
         res.json({ authUrl });
     } catch (err) {
         res.status(500).json({ error: err.message });
@@ -180,7 +183,7 @@ app.get('/api/oauth/callback', async (req, res) => {
         }
         if (!code) return res.status(400).send(errorPage('No authorization code received'));
 
-        await exchangeCodeForTokens(code, ONEDRIVE_REDIRECT_URI);
+        await exchangeCodeForTokens(code, getRedirectUri(req));
 
         res.send(`<!DOCTYPE html>
 <html>
