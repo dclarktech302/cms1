@@ -180,14 +180,21 @@ app.get('/api/oauth/authorize-url', (req, res) => {
 
 app.get('/api/oauth/callback', async (req, res) => {
     try {
-        const { code, error, error_description } = req.query;
+        const { code, state, error, error_description } = req.query;
 
         if (error) {
             return res.status(400).send(errorPage(error_description || error));
         }
         if (!code) return res.status(400).send(errorPage('No authorization code received'));
 
-        await exchangeCodeForTokens(code, getRedirectUri(req));
+        // Decode the redirect URI from state (set by getAuthCodeUrl) so token
+        // exchange uses the exact same value as the authorize request
+        let redirectUri = getRedirectUri(req);
+        if (state) {
+            try { redirectUri = Buffer.from(state, 'base64').toString(); } catch {}
+        }
+
+        await exchangeCodeForTokens(code, redirectUri);
 
         res.send(`<!DOCTYPE html>
 <html>

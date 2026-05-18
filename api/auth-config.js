@@ -52,6 +52,8 @@ async function persistTokens(accessToken, refreshToken, expiresIn) {
 // ─── OAuth helpers ────────────────────────────────────────────────────────────
 
 export function getAuthCodeUrl(redirectUri) {
+    // Encode redirectUri in state so the callback can reuse the exact same value
+    const state = Buffer.from(redirectUri).toString('base64');
     const params = new URLSearchParams({
         client_id: process.env.AZURE_CLIENT_ID,
         response_type: 'code',
@@ -59,6 +61,7 @@ export function getAuthCodeUrl(redirectUri) {
         scope: SCOPES,
         response_mode: 'query',
         prompt: 'consent',
+        state,
     });
     return `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize?${params}`;
 }
