@@ -100,6 +100,10 @@ app.use((req, res, next) => {
 // ─── OneDrive helpers ─────────────────────────────────────────────────────────
 
 function getRedirectUri(req) {
+    // Use stable production domain on Vercel (works on preview deploys too)
+    if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+        return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/api/oauth/callback`;
+    }
     const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
     return `${proto}://${req.headers.host}/api/oauth/callback`;
 }
