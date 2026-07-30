@@ -5,21 +5,16 @@ import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
 import {
     S3Client,
-    ListObjectsV2Command,
+    CopyObjectCommand,
+    DeleteObjectCommand,
     GetObjectCommand,
     PutObjectCommand,
-    HeadObjectCommand,
+    HeadBucketCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { Client } from '@microsoft/microsoft-graph-client';
 import axios from 'axios';
-import 'isomorphic-fetch';
-import {
-    getAccessToken,
-    exchangeCodeForTokens,
-    getAuthCodeUrl,
-    isOneDriveConnected,
-} from './auth-config.js';
+import supabase from './supabase-client.js';
+import { getAuthCodeUrl, exchangeCodeForTokens } from './auth-config.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -32,7 +27,7 @@ app.use(express.static(join(__dirname, '../public')));
 
 // ─── AWS S3 ───────────────────────────────────────────────────────────────────
 
-const s3Client = new S3Client({
+const s3 = new S3Client({
     region: process.env.AWS_REGION || 'us-east-1',
     credentials: {
         accessKeyId: process.env.AWS_ACCESS_KEY_ID,
@@ -40,8 +35,7 @@ const s3Client = new S3Client({
     },
 });
 
-const S3_BUCKET = process.env.S3_BUCKET_NAME;
-const S3_FOLDER = process.env.S3_FOLDER_PATH || 'gamingclips';
+const S3_BUCKET = process.env.S3_BUCKET_NAME || process.env.AWS_S3_BUCKET_NAME;
 
 // ─── Session helpers ──────────────────────────────────────────────────────────
 
@@ -68,19 +62,11 @@ function isValidSession(req) {
     const token = parseCookies(req).cms_session;
     if (!token) return false;
     const expected = signSession(secret);
-    try {
-        return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected));
-    } catch {
-        return false; // length mismatch
-    }
+    try { return crypto.timingSafeEqual(Buffer.from(token), Buffer.from(expected)); }
+    catch { return false; }
 }
 
-function requireSession(req, res, next) {
-    if (isValidSession(req)) return next();
-    res.status(401).json({ error: 'Unauthorized' });
-}
-
-// Session guard on all /api routes except public ones
+// Session guard — all /api/* except the allowlist below
 const PUBLIC_API_PATHS = [
     '/api/health',
     '/api/auth/login',
@@ -88,6 +74,7 @@ const PUBLIC_API_PATHS = [
     '/api/auth/logout',
     '/api/oauth/authorize-url',
     '/api/oauth/callback',
+    '/api/clips/ingest',  // protected by CMS_INGEST_SECRET instead
 ];
 
 app.use((req, res, next) => {
@@ -97,47 +84,10 @@ app.use((req, res, next) => {
     res.status(401).json({ error: 'Unauthorized' });
 });
 
-// ─── OneDrive helpers ─────────────────────────────────────────────────────────
-
-function getRedirectUri(req) {
-    // Use stable production domain on Vercel (works on preview deploys too)
-    if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
-        return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/api/oauth/callback`;
-    }
-    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
-    return `${proto}://${req.headers.host}/api/oauth/callback`;
-}
-
-async function getGraphClient() {
-    const token = await getAccessToken();
-    return Client.init({
-        authProvider: (done) => done(null, token),
-    });
-}
-
-async function uploadToS3(stream, filename, contentType, contentLength) {
-    const key = S3_FOLDER ? `${S3_FOLDER}/${filename}` : filename;
-    const params = {
-        Bucket: S3_BUCKET,
-        Key: key,
-        Body: stream,
-        ContentType: contentType,
-    };
-    if (contentLength) params.ContentLength = contentLength;
-    await s3Client.send(new PutObjectCommand(params));
-    console.log(`✅ Uploaded to S3: ${key}`);
-    return key;
-}
-
 // ─── Health ───────────────────────────────────────────────────────────────────
 
 app.get('/api/health', (_req, res) => {
-    res.json({
-        status: 'ok',
-        bucket: S3_BUCKET || 'NOT SET',
-        folder: S3_FOLDER,
-        timestamp: new Date().toISOString(),
-    });
+    res.json({ status: 'ok', bucket: S3_BUCKET || 'NOT SET', timestamp: new Date().toISOString() });
 });
 
 // ─── Auth ─────────────────────────────────────────────────────────────────────
@@ -149,16 +99,13 @@ app.get('/api/auth/status', (req, res) => {
 app.post('/api/auth/login', (req, res) => {
     const { password } = req.body || {};
     if (!password) return res.status(400).json({ error: 'Password required' });
-
     const secret = process.env.ADMIN_SECRET;
     if (!secret) return res.status(503).json({ error: 'ADMIN_SECRET not configured' });
-
     if (password !== secret) return res.status(401).json({ error: 'Incorrect password' });
 
     const token = signSession(secret);
-    const maxAge = 30 * 24 * 60 * 60;
     const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
-    res.setHeader('Set-Cookie', `cms_session=${token}; HttpOnly; SameSite=Strict; Max-Age=${maxAge}; Path=/${secure}`);
+    res.setHeader('Set-Cookie', `cms_session=${token}; HttpOnly; SameSite=Strict; Max-Age=${30 * 24 * 3600}; Path=/${secure}`);
     res.json({ success: true });
 });
 
@@ -167,12 +114,21 @@ app.post('/api/auth/logout', (_req, res) => {
     res.json({ success: true });
 });
 
-// ─── OAuth (OneDrive) ─────────────────────────────────────────────────────────
+// ─── OneDrive OAuth (initial token only) ─────────────────────────────────────
+
+function getRedirectUri(req) {
+    const configured = process.env.ONEDRIVE_REDIRECT_URI;
+    if (configured && !configured.includes('localhost')) return configured;
+    if (process.env.VERCEL_PROJECT_PRODUCTION_URL) {
+        return `https://${process.env.VERCEL_PROJECT_PRODUCTION_URL}/api/oauth/callback`;
+    }
+    const proto = req.headers['x-forwarded-proto'] || req.protocol || 'https';
+    return `${proto}://${req.headers.host}/api/oauth/callback`;
+}
 
 app.get('/api/oauth/authorize-url', (req, res) => {
     try {
-        const authUrl = getAuthCodeUrl(getRedirectUri(req));
-        res.json({ authUrl });
+        res.json({ authUrl: getAuthCodeUrl(getRedirectUri(req)) });
     } catch (err) {
         res.status(500).json({ error: err.message });
     }
@@ -181,262 +137,273 @@ app.get('/api/oauth/authorize-url', (req, res) => {
 app.get('/api/oauth/callback', async (req, res) => {
     try {
         const { code, state, error, error_description } = req.query;
+        if (error) return res.status(400).send(htmlPage('Auth Error', `<p style="color:#f85149">${error_description || error}</p><p><a href="/">Back</a></p>`));
+        if (!code) return res.status(400).send(htmlPage('Auth Error', '<p>No authorization code received</p>'));
 
-        if (error) {
-            return res.status(400).send(errorPage(error_description || error));
-        }
-        if (!code) return res.status(400).send(errorPage('No authorization code received'));
-
-        // Decode the redirect URI from state (set by getAuthCodeUrl) so token
-        // exchange uses the exact same value as the authorize request
         let redirectUri = getRedirectUri(req);
-        if (state) {
-            try { redirectUri = Buffer.from(state, 'base64').toString(); } catch {}
-        }
+        if (state) { try { redirectUri = Buffer.from(state, 'base64').toString(); } catch {} }
 
-        await exchangeCodeForTokens(code, redirectUri);
+        const tokens = await exchangeCodeForTokens(code, redirectUri);
 
-        res.send(`<!DOCTYPE html>
-<html>
-<head>
-  <title>OneDrive Connected</title>
-  <meta http-equiv="refresh" content="3;url=/">
-  <style>
-    body { font-family: 'IBM Plex Mono', monospace; background: #0f1117; color: #3fb950; max-width: 480px; margin: 80px auto; padding: 24px; text-align: center; }
-    h1 { font-size: 2rem; margin-bottom: 12px; }
-    p { color: #8b949e; }
-    a { color: #d4a574; }
-  </style>
-</head>
-<body>
-  <h1>&#10003; OneDrive Connected</h1>
-  <p>Tokens saved. Redirecting to dashboard&hellip;</p>
-  <p><a href="/">Go now</a></p>
-</body>
-</html>`);
+        res.send(htmlPage('OneDrive Connected', `
+            <h2 style="color:#3fb950">&#10003; OneDrive Connected</h2>
+            <p>Copy the refresh token below into GitHub Secrets as <code>ONEDRIVE_REFRESH_TOKEN</code>:</p>
+            <textarea style="width:100%;height:80px;background:#0d1117;color:#ccc;border:1px solid #30363d;padding:8px;font-family:monospace;font-size:11px;border-radius:4px"
+                onclick="this.select()">${tokens.refresh_token || 'Not returned — re-authenticate with offline_access scope'}</textarea>
+            <p style="color:#8b949e;font-size:0.85rem">After adding to GitHub Secrets, the Action will auto-rotate this token going forward.</p>
+            <p><a href="/">Back to dashboard</a></p>
+        `));
     } catch (err) {
-        res.status(500).send(errorPage(err.message));
+        res.status(500).send(htmlPage('Auth Error', `<p style="color:#f85149">${err.message}</p>`));
     }
 });
 
-function errorPage(message) {
-    return `<!DOCTYPE html>
-<html>
-<head>
-  <title>Auth Error</title>
-  <style>
-    body { font-family: monospace; background: #0f1117; color: #f85149; max-width: 480px; margin: 80px auto; padding: 24px; text-align: center; }
-    a { color: #d4a574; }
-  </style>
-</head>
-<body>
-  <h1>Auth Error</h1>
-  <p>${message}</p>
-  <p><a href="/">Back to dashboard</a></p>
-</body>
-</html>`;
+function htmlPage(title, body) {
+    return `<!DOCTYPE html><html><head><title>${title}</title>
+<style>body{font-family:monospace;background:#0f1117;color:#e6edf3;max-width:600px;margin:60px auto;padding:24px}a{color:#d4a574}code{background:#161b22;padding:2px 6px;border-radius:3px}</style>
+</head><body>${body}</body></html>`;
 }
 
-// ─── OneDrive connection status ───────────────────────────────────────────────
+// ─── Clips — ingest (called by GitHub Action) ────────────────────────────────
 
-app.get('/api/onedrive/status', (_req, res) => {
-    res.json({ connected: isOneDriveConnected() });
+app.post('/api/clips/ingest', async (req, res) => {
+    const secret = req.headers['x-ingest-secret'];
+    if (!secret || secret !== process.env.CMS_INGEST_SECRET) {
+        return res.status(401).json({ error: 'Invalid ingest secret' });
+    }
+
+    const { filename, s3Key, size, onedrive_id, recorded_at } = req.body || {};
+    if (!filename || !s3Key) return res.status(400).json({ error: 'filename and s3Key required' });
+
+    const { data, error } = await supabase
+        .from('clips')
+        .insert({
+            filename,
+            s3_key: s3Key,
+            size_bytes: size || null,
+            recorded_at: recorded_at || null,
+        })
+        .select('id, s3_key')
+        .single();
+
+    if (error) {
+        if (error.code === '23505') return res.status(409).json({ error: 'Clip already ingested' });
+        console.error('Supabase insert error:', error);
+        return res.status(500).json({ error: error.message });
+    }
+
+    res.status(201).json({ id: data.id, s3_key: data.s3_key });
 });
 
-// ─── OneDrive file browser ────────────────────────────────────────────────────
+// ─── Clips — list ─────────────────────────────────────────────────────────────
 
-app.get('/api/onedrive/files', async (_req, res) => {
+app.get('/api/clips', async (req, res) => {
     try {
-        const client = await getGraphClient();
-
-        let files = [];
-        let nextUrl = '/me/drive/root:/Videos/Xbox Game DVR:/children' +
-            '?$orderby=lastModifiedDateTime desc' +
-            '&$top=200';
-
-        while (nextUrl) {
-            const response = await client.api(nextUrl).get();
-            files = files.concat(response.value || []);
-            nextUrl = response['@odata.nextLink'] || null;
+        const { status } = req.query;
+        let query = supabase.from('clips').select('*').order('created_at', { ascending: false });
+        if (status) {
+            const statuses = status.split(',');
+            query = statuses.length === 1
+                ? query.eq('status', statuses[0])
+                : query.in('status', statuses);
         }
-
-        const videoFiles = files.filter(f => f.file?.mimeType?.startsWith('video/'));
-
-        res.json(videoFiles.map(f => ({
-            id: f.id,
-            name: f.name,
-            size: f.size,
-            lastModified: f.lastModifiedDateTime,
-            mimeType: f.file?.mimeType,
-            duration: f.video?.duration,
-            width: f.video?.width,
-            height: f.video?.height,
-            downloadUrl: f['@microsoft.graph.downloadUrl'],
-        })));
+        const { data, error } = await query;
+        if (error) throw error;
+        res.json(data);
     } catch (err) {
-        if (err.message?.includes('not connected') || err.message?.includes('Authenticate')) {
-            return res.status(401).json({ error: 'OneDrive not connected', needsAuth: true });
-        }
-        if (err.message?.includes('not found') || err.statusCode === 404) {
-            return res.status(404).json({ error: 'Xbox Game DVR folder not found in OneDrive' });
-        }
         res.status(500).json({ error: err.message });
     }
 });
 
-// ─── OneDrive → S3 import ─────────────────────────────────────────────────────
+// ─── Clips — presigned preview URL ───────────────────────────────────────────
 
-app.post('/api/onedrive/import', async (req, res) => {
+app.get('/api/clips/:id/preview', async (req, res) => {
     try {
-        const { fileId, filename } = req.body || {};
-        if (!fileId) return res.status(400).json({ error: 'fileId required' });
-        if (!S3_BUCKET) return res.status(500).json({ error: 'S3_BUCKET_NAME not configured' });
+        const { data: clip, error } = await supabase
+            .from('clips').select('s3_key, trimmed_s3_key').eq('id', req.params.id).single();
+        if (error || !clip) return res.status(404).json({ error: 'Clip not found' });
 
-        // Get a fresh download URL for the item
-        const client = await getGraphClient();
-        const item = await client.api(`/me/drive/items/${fileId}`).get();
-        const downloadUrl = item['@microsoft.graph.downloadUrl'];
-        if (!downloadUrl) return res.status(400).json({ error: 'No download URL available' });
-
-        const name = filename || item.name;
-
-        // Stream from OneDrive directly to S3
-        const streamRes = await axios.get(downloadUrl, { responseType: 'stream' });
-        const contentType = streamRes.headers['content-type'] || 'video/mp4';
-        const contentLength = streamRes.headers['content-length']
-            ? parseInt(streamRes.headers['content-length'])
-            : undefined;
-
-        const key = await uploadToS3(streamRes.data, name, contentType, contentLength);
-
-        res.json({ success: true, key, filename: name });
+        const key = clip.trimmed_s3_key || clip.s3_key;
+        const url = await getSignedUrl(s3, new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }), { expiresIn: 1800 });
+        res.json({ url, expiresIn: 1800 });
     } catch (err) {
-        console.error('Import error:', err.message);
         res.status(500).json({ error: err.message });
     }
 });
 
-// ─── Webhook (kept for potential future use) ──────────────────────────────────
+// ─── Clips — presigned upload URL (for trimmed output) ───────────────────────
 
-const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
-
-app.post('/api/webhook/onedrive', async (req, res) => {
+app.get('/api/clips/:id/presigned-upload', async (req, res) => {
     try {
-        const { validationToken } = req.query;
-        if (validationToken) {
-            return res.status(200).send(validationToken);
+        const { data: clip, error } = await supabase
+            .from('clips').select('filename').eq('id', req.params.id).single();
+        if (error || !clip) return res.status(404).json({ error: 'Clip not found' });
+
+        const key = `trimmed/${clip.filename}`;
+        const url = await getSignedUrl(
+            s3,
+            new PutObjectCommand({ Bucket: S3_BUCKET, Key: key, ContentType: 'video/mp4' }),
+            { expiresIn: 3600 }
+        );
+        res.json({ url, key, expiresIn: 3600 });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── Clips — accept ───────────────────────────────────────────────────────────
+
+app.post('/api/clips/:id/accept', async (req, res) => {
+    try {
+        const { data: clip, error: fetchErr } = await supabase
+            .from('clips').select('s3_key, filename').eq('id', req.params.id).single();
+        if (fetchErr || !clip) return res.status(404).json({ error: 'Clip not found' });
+
+        const newKey = `library/${clip.filename}`;
+
+        // Copy pending/ → library/
+        await s3.send(new CopyObjectCommand({
+            Bucket: S3_BUCKET,
+            CopySource: `${S3_BUCKET}/${clip.s3_key}`,
+            Key: newKey,
+        }));
+
+        // Delete from pending/
+        await s3.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: clip.s3_key }));
+
+        // Update Supabase
+        const { error } = await supabase
+            .from('clips')
+            .update({ status: 'accepted', s3_key: newKey })
+            .eq('id', req.params.id);
+        if (error) throw error;
+
+        res.json({ success: true, s3_key: newKey });
+    } catch (err) {
+        console.error('Accept error:', err.message);
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── Clips — discard ─────────────────────────────────────────────────────────
+
+app.delete('/api/clips/:id', async (req, res) => {
+    try {
+        const { data: clip, error: fetchErr } = await supabase
+            .from('clips').select('s3_key, trimmed_s3_key').eq('id', req.params.id).single();
+        if (fetchErr || !clip) return res.status(404).json({ error: 'Clip not found' });
+
+        // Delete from S3 (both keys if trimmed version exists)
+        const deleteOps = [
+            s3.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: clip.s3_key })),
+        ];
+        if (clip.trimmed_s3_key) {
+            deleteOps.push(s3.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: clip.trimmed_s3_key })));
         }
+        await Promise.allSettled(deleteOps);
 
-        const notifications = req.body?.value;
-        if (!notifications?.length) return res.status(200).json({ message: 'No notifications' });
+        // Mark discarded in Supabase
+        const { error } = await supabase
+            .from('clips')
+            .update({ status: 'discarded' })
+            .eq('id', req.params.id);
+        if (error) throw error;
 
-        res.status(202).json({ message: 'Accepted' });
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
 
-        for (const notification of notifications) {
-            if (notification.clientState !== WEBHOOK_SECRET) continue;
-            const itemId = notification.resourceData?.id;
-            if (!itemId) continue;
+// ─── Clips — patch (trim complete, status update) ────────────────────────────
 
-            try {
-                const client = await getGraphClient();
-                const item = await client.api(`/me/drive/items/${itemId}`).get();
-                const downloadUrl = item['@microsoft.graph.downloadUrl'];
-                const streamRes = await axios.get(downloadUrl, { responseType: 'stream' });
-                const contentType = streamRes.headers['content-type'] || 'video/mp4';
-                await uploadToS3(streamRes.data, item.name, contentType);
-            } catch (err) {
-                console.error(`Error processing ${itemId}:`, err.message);
+app.patch('/api/clips/:id', async (req, res) => {
+    try {
+        const allowed = ['status', 'trimmed_s3_key', 'tiktok_draft_id'];
+        const updates = Object.fromEntries(
+            Object.entries(req.body || {}).filter(([k]) => allowed.includes(k))
+        );
+        if (!Object.keys(updates).length) return res.status(400).json({ error: 'No valid fields' });
+
+        const { error } = await supabase.from('clips').update(updates).eq('id', req.params.id);
+        if (error) throw error;
+        res.json({ success: true });
+    } catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+
+// ─── Sync — trigger GitHub Action ────────────────────────────────────────────
+
+app.post('/api/sync/trigger', async (_req, res) => {
+    try {
+        const token = process.env.GITHUB_PAT;
+        if (!token) return res.status(503).json({ error: 'GITHUB_PAT not configured' });
+
+        await axios.post(
+            'https://api.github.com/repos/dclarktech302/cms1/actions/workflows/sync-clips.yml/dispatches',
+            { ref: 'main' },
+            {
+                headers: {
+                    Authorization: `Bearer ${token}`,
+                    Accept: 'application/vnd.github+json',
+                },
             }
-        }
+        );
+        res.json({ success: true });
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        res.status(500).json({ error: err.response?.data?.message || err.message });
     }
 });
 
-// ─── Videos (S3 library) ─────────────────────────────────────────────────────
+// ─── Status — connectivity checks ────────────────────────────────────────────
 
-app.get('/api/videos', async (_req, res) => {
+app.get('/api/status', async (_req, res) => {
+    const results = {};
+
+    // Supabase: check by querying clips count
     try {
-        if (!S3_BUCKET) return res.status(500).json({ error: 'S3_BUCKET_NAME not configured' });
-
-        const response = await s3Client.send(
-            new ListObjectsV2Command({
-                Bucket: S3_BUCKET,
-                Prefix: S3_FOLDER ? `${S3_FOLDER}/` : '',
-            })
-        );
-
-        if (!response.Contents) return res.json([]);
-
-        const videos = response.Contents.filter(item => !item.Key.endsWith('/'))
-            .map(item => ({
-                key: item.Key,
-                filename: item.Key.split('/').pop(),
-                size_bytes: item.Size,
-                last_modified: item.LastModified,
-                url: `/api/video-url?key=${encodeURIComponent(item.Key)}`,
-            }))
-            .sort((a, b) => new Date(b.last_modified) - new Date(a.last_modified));
-
-        res.json(videos);
+        const { error } = await supabase.from('clips').select('id', { count: 'exact', head: true });
+        results.supabase = error ? { ok: false, error: error.message } : { ok: true };
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        results.supabase = { ok: false, error: err.message };
     }
-});
 
-app.get('/api/video-url', async (req, res) => {
+    // S3
     try {
-        const { key } = req.query;
-        if (!key) return res.status(400).json({ error: 'key parameter required' });
-        if (!S3_BUCKET) return res.status(500).json({ error: 'S3_BUCKET_NAME not configured' });
-        if (S3_FOLDER && !key.startsWith(`${S3_FOLDER}/`))
-            return res.status(403).json({ error: 'Access denied' });
-
-        const url = await getSignedUrl(
-            s3Client,
-            new GetObjectCommand({ Bucket: S3_BUCKET, Key: key }),
-            { expiresIn: 3600 }
-        );
-        res.json({ url });
+        await s3.send(new HeadBucketCommand({ Bucket: S3_BUCKET }));
+        results.s3 = { ok: true, bucket: S3_BUCKET };
     } catch (err) {
-        res.status(500).json({ error: err.message });
+        results.s3 = { ok: false, error: err.message, bucket: S3_BUCKET };
     }
-});
 
-app.get('/api/test-video/:key', async (req, res) => {
+    // Last sync: most recent clip created_at
     try {
-        const fullKey = S3_FOLDER ? `${S3_FOLDER}/${req.params.key}` : req.params.key;
-        const metadata = await s3Client.send(
-            new HeadObjectCommand({ Bucket: S3_BUCKET, Key: fullKey })
-        );
-        const url = await getSignedUrl(
-            s3Client,
-            new GetObjectCommand({ Bucket: S3_BUCKET, Key: fullKey }),
-            { expiresIn: 3600 }
-        );
-        res.json({ key: fullKey, url, metadata });
-    } catch (err) {
-        res.status(500).json({ error: err.message });
+        const { data } = await supabase
+            .from('clips').select('created_at').order('created_at', { ascending: false }).limit(1);
+        results.lastSync = data?.[0]?.created_at || null;
+    } catch {
+        results.lastSync = null;
     }
+
+    results.githubPat = !!process.env.GITHUB_PAT;
+
+    res.json(results);
 });
 
 // ─── Login page ───────────────────────────────────────────────────────────────
 
-app.get('/login', (_req, res) => {
-    res.sendFile(join(__dirname, '../public/login.html'));
-});
+app.get('/login', (_req, res) => res.sendFile(join(__dirname, '../public/login.html')));
 
 // ─── Catch-all ────────────────────────────────────────────────────────────────
 
-app.get('*', (_req, res) => {
-    res.sendFile(join(__dirname, '../public/index.html'));
-});
+app.get('*', (_req, res) => res.sendFile(join(__dirname, '../public/index.html')));
 
-// ─── Local dev server ─────────────────────────────────────────────────────────
+// ─── Local dev ────────────────────────────────────────────────────────────────
 
 if (process.env.NODE_ENV !== 'production') {
     const PORT = process.env.PORT || 3000;
-    app.listen(PORT, () => console.log(`🚀 Server running at http://localhost:${PORT}`));
+    app.listen(PORT, () => console.log(`🚀 http://localhost:${PORT}`));
 }
 
 export default app;
