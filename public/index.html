@@ -6,11 +6,7 @@
     <title>UFC5 Fight Archive</title>
     <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
     <style>
-        * {
-            margin: 0;
-            padding: 0;
-            box-sizing: border-box;
-        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
 
         :root {
             --bg-primary: #0f1117;
@@ -23,6 +19,7 @@
             --border: #30363d;
             --success: #3fb950;
             --error: #f85149;
+            --warning: #f0883e;
         }
 
         body {
@@ -34,137 +31,155 @@
             padding: 20px;
         }
 
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-        }
+        .container { max-width: 1200px; margin: 0 auto; }
 
         /* Header */
         .header {
-            margin-bottom: 60px;
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            margin-bottom: 40px;
             animation: headerSlideIn 0.8s ease-out;
         }
 
         @keyframes headerSlideIn {
-            from {
-                opacity: 0;
-                transform: translateY(-30px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        .header h1 {
+        .header-title h1 {
             font-size: 3.5rem;
             font-weight: 700;
             letter-spacing: -1px;
-            margin-bottom: 12px;
             color: var(--accent);
             font-family: 'IBM Plex Mono', monospace;
             text-transform: uppercase;
         }
 
-        .header p {
-            font-size: 0.95rem;
+        .header-title p {
+            font-size: 0.75rem;
             color: var(--text-secondary);
             letter-spacing: 2px;
             text-transform: uppercase;
             font-weight: 500;
         }
 
+        .header-actions { display: flex; gap: 10px; padding-top: 8px; }
+
+        .btn {
+            padding: 8px 16px;
+            border-radius: 4px;
+            font-family: 'IBM Plex Sans', sans-serif;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            border: 1px solid var(--border);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            transition: all 0.2s;
+        }
+
+        .btn-ghost {
+            background: transparent;
+            color: var(--text-secondary);
+        }
+
+        .btn-ghost:hover {
+            border-color: var(--accent);
+            color: var(--accent);
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: var(--bg-primary);
+            border-color: var(--accent);
+        }
+
+        .btn-primary:hover { background: var(--accent-dark); border-color: var(--accent-dark); }
+
+        .btn-small { padding: 5px 12px; font-size: 0.75rem; }
+
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* Tabs */
+        .tabs {
+            display: flex;
+            gap: 0;
+            border-bottom: 1px solid var(--border);
+            margin-bottom: 32px;
+        }
+
+        .tab-btn {
+            padding: 12px 24px;
+            background: transparent;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: var(--text-secondary);
+            font-family: 'IBM Plex Sans', sans-serif;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            margin-bottom: -1px;
+        }
+
+        .tab-btn:hover { color: var(--text-primary); }
+        .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
         /* Stats */
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin-bottom: 50px;
-            padding: 30px;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 16px;
+            margin-bottom: 32px;
+            padding: 24px;
             background: var(--bg-secondary);
             border: 1px solid var(--border);
             border-radius: 8px;
-            animation: statsSlideIn 1s ease-out 0.2s both;
         }
 
-        @keyframes statsSlideIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .stat {
-            text-align: center;
-        }
+        .stat { text-align: center; }
 
         .stat-value {
-            font-size: 2.5rem;
+            font-size: 2rem;
             font-weight: 700;
             color: var(--accent);
             font-family: 'IBM Plex Mono', monospace;
-            margin-bottom: 8px;
+            margin-bottom: 4px;
         }
 
         .stat-label {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 1px;
             font-weight: 600;
         }
 
-        /* Grid */
+        /* Video grid */
         .videos-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-            gap: 24px;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
             margin-bottom: 60px;
         }
 
-        /* Video Card */
         .video-card {
             background: var(--bg-secondary);
             border: 1px solid var(--border);
             border-radius: 8px;
             overflow: hidden;
             cursor: pointer;
-            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            animation: cardFadeIn 0.6s ease-out both;
-        }
-
-        .video-card:nth-child(1) { animation-delay: 0.1s; }
-        .video-card:nth-child(2) { animation-delay: 0.2s; }
-        .video-card:nth-child(3) { animation-delay: 0.3s; }
-        .video-card:nth-child(4) { animation-delay: 0.4s; }
-        .video-card:nth-child(5) { animation-delay: 0.5s; }
-        .video-card:nth-child(6) { animation-delay: 0.6s; }
-
-        @keyframes cardFadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(20px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
+            transition: all 0.3s ease;
         }
 
         .video-card:hover {
             border-color: var(--accent);
-            transform: translateY(-6px);
-            box-shadow: 0 12px 32px rgba(212, 165, 116, 0.15);
+            transform: translateY(-4px);
+            box-shadow: 0 8px 24px rgba(212, 165, 116, 0.12);
         }
 
-        .video-card.active {
-            border-color: var(--accent);
-            box-shadow: 0 0 20px rgba(212, 165, 116, 0.3);
-        }
+        .video-card.active { border-color: var(--accent); box-shadow: 0 0 16px rgba(212, 165, 116, 0.25); }
 
         .video-thumbnail {
             width: 100%;
@@ -174,95 +189,58 @@
             align-items: center;
             justify-content: center;
             position: relative;
-            overflow: hidden;
-        }
-
-        .video-thumbnail::before {
-            content: '';
-            position: absolute;
-            inset: 0;
-            background: radial-gradient(circle at 30% 30%, rgba(212, 165, 116, 0.08), transparent);
-            pointer-events: none;
         }
 
         .play-button {
-            width: 56px;
-            height: 56px;
+            width: 48px;
+            height: 48px;
             background: var(--accent);
             border-radius: 50%;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.3s ease;
-            z-index: 2;
+            transition: all 0.2s;
         }
 
         .play-button::after {
             content: '';
-            width: 0;
-            height: 0;
-            border-left: 16px solid var(--bg-primary);
-            border-top: 10px solid transparent;
-            border-bottom: 10px solid transparent;
+            border-left: 14px solid var(--bg-primary);
+            border-top: 9px solid transparent;
+            border-bottom: 9px solid transparent;
             margin-left: 3px;
         }
 
-        .video-card:hover .play-button {
-            background: var(--accent-dark);
-            transform: scale(1.1);
-        }
+        .video-card:hover .play-button { background: var(--accent-dark); transform: scale(1.1); }
 
-        .video-info {
-            padding: 20px;
-        }
+        .video-info { padding: 16px 20px; }
 
         .video-title {
-            font-size: 1rem;
+            font-size: 0.95rem;
             font-weight: 600;
             color: var(--text-primary);
             margin-bottom: 8px;
-            line-height: 1.3;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
         }
 
         .video-meta {
             display: flex;
             justify-content: space-between;
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             color: var(--text-secondary);
             font-family: 'IBM Plex Mono', monospace;
-            gap: 12px;
         }
 
-        .video-date {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-
-        .video-size {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-            color: var(--accent);
-            font-weight: 500;
-        }
+        .video-size { color: var(--accent); font-weight: 500; }
 
         /* Modal */
         .modal {
             display: none;
             position: fixed;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
+            inset: 0;
             background: rgba(0, 0, 0, 0.95);
             z-index: 1000;
-            animation: fadeIn 0.3s ease-out;
-        }
-
-        @keyframes fadeIn {
-            from { opacity: 0; }
-            to { opacity: 1; }
         }
 
         .modal.active {
@@ -279,67 +257,37 @@
             border: 1px solid var(--border);
             border-radius: 8px;
             overflow: hidden;
-            animation: slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
         }
 
-        @keyframes slideUp {
-            from {
-                opacity: 0;
-                transform: translateY(40px);
-            }
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
-
-        .modal-video {
-            width: 100%;
-            aspect-ratio: 16 / 9;
-            background: #000;
-        }
-
-        .modal-video video {
-            width: 100%;
-            height: 100%;
-        }
+        .modal-video { width: 100%; aspect-ratio: 16 / 9; background: #000; }
+        .modal-video video { width: 100%; height: 100%; }
 
         .modal-info {
-            padding: 30px;
+            padding: 24px;
             border-top: 1px solid var(--border);
         }
 
-        .modal-title {
-            font-size: 1.6rem;
-            font-weight: 700;
-            color: var(--text-primary);
-            margin-bottom: 16px;
-        }
+        .modal-title { font-size: 1.4rem; font-weight: 700; margin-bottom: 12px; }
 
         .modal-meta {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 20px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 32px;
+            flex-wrap: wrap;
         }
 
-        .modal-meta-item {
-            display: flex;
-            flex-direction: column;
-        }
+        .modal-meta-item { display: flex; flex-direction: column; }
 
         .modal-meta-label {
-            font-size: 0.7rem;
+            font-size: 0.65rem;
             color: var(--text-secondary);
             text-transform: uppercase;
             letter-spacing: 1px;
             font-weight: 600;
-            margin-bottom: 6px;
+            margin-bottom: 4px;
         }
 
         .modal-meta-value {
-            font-size: 0.95rem;
+            font-size: 0.9rem;
             color: var(--accent);
             font-family: 'IBM Plex Mono', monospace;
             font-weight: 600;
@@ -347,123 +295,230 @@
 
         .close-button {
             position: absolute;
-            top: 20px;
-            right: 20px;
-            width: 40px;
-            height: 40px;
+            top: 16px;
+            right: 16px;
+            width: 36px;
+            height: 36px;
             background: transparent;
             border: 1px solid var(--border);
             color: var(--text-primary);
-            font-size: 24px;
+            font-size: 20px;
             cursor: pointer;
             border-radius: 4px;
             display: flex;
             align-items: center;
             justify-content: center;
-            transition: all 0.2s ease;
             z-index: 1001;
+            transition: all 0.2s;
         }
 
-        .close-button:hover {
-            border-color: var(--accent);
-            color: var(--accent);
-        }
+        .close-button:hover { border-color: var(--accent); color: var(--accent); }
 
         /* Loading */
         .loading {
             display: flex;
             justify-content: center;
             align-items: center;
-            min-height: 400px;
+            min-height: 300px;
         }
 
         .spinner {
-            width: 48px;
-            height: 48px;
+            width: 40px;
+            height: 40px;
             border: 2px solid var(--border);
             border-top-color: var(--accent);
             border-radius: 50%;
-            animation: spin 1s linear infinite;
+            animation: spin 0.9s linear infinite;
         }
 
-        @keyframes spin {
-            to { transform: rotate(360deg); }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* Empty / error states */
+        .empty-state { text-align: center; padding: 80px 20px; }
+        .empty-state-icon { font-size: 2.5rem; margin-bottom: 12px; opacity: 0.3; }
+        .empty-state-text { color: var(--text-secondary); }
+
+        .message {
+            padding: 12px 16px;
+            border-radius: 4px;
+            font-size: 0.875rem;
+            margin-bottom: 20px;
         }
 
-        /* Empty State */
-        .empty-state {
-            text-align: center;
-            padding: 80px 20px;
+        .message-error { background: rgba(248, 81, 73, 0.1); border: 1px solid var(--error); color: #ff8a80; }
+        .message-success { background: rgba(63, 185, 80, 0.1); border: 1px solid var(--success); color: #56d364; }
+        .message-info { background: rgba(212, 165, 116, 0.1); border: 1px solid var(--accent); color: var(--accent); }
+
+        /* Connection status panel */
+        .connection-panel {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 24px;
+            margin-bottom: 24px;
         }
 
-        .empty-state-icon {
-            font-size: 3rem;
-            margin-bottom: 16px;
-            opacity: 0.3;
-        }
-
-        .empty-state-text {
+        .connection-panel h3 {
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 1px;
             color: var(--text-secondary);
-            font-size: 1.1rem;
+            margin-bottom: 16px;
+            font-weight: 600;
         }
 
-        /* Error Message */
-        .error-message {
-            padding: 16px;
-            background: rgba(248, 81, 73, 0.1);
-            border: 1px solid var(--error);
-            border-radius: 4px;
-            color: #ff8a80;
-            font-size: 0.9rem;
-            margin-bottom: 20px;
+        .connection-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 12px;
         }
 
-        .success-message {
-            padding: 16px;
-            background: rgba(63, 185, 80, 0.1);
-            border: 1px solid var(--success);
-            border-radius: 4px;
-            color: #56d364;
-            font-size: 0.9rem;
-            margin-bottom: 20px;
+        .connection-label {
+            display: flex;
+            align-items: center;
+            gap: 10px;
         }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+        }
+
+        .dot-green { background: var(--success); box-shadow: 0 0 6px var(--success); }
+        .dot-red { background: var(--error); }
+        .dot-gray { background: var(--border); }
+
+        .connection-name { font-weight: 600; }
+        .connection-note { font-size: 0.8rem; color: var(--text-secondary); font-family: 'IBM Plex Mono', monospace; }
+
+        .connection-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+        /* OneDrive file browser */
+        .od-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 16px;
+            margin-top: 16px;
+        }
+
+        .od-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            overflow: hidden;
+            transition: border-color 0.2s;
+        }
+
+        .od-card:hover { border-color: var(--accent); }
+
+        .od-preview {
+            width: 100%;
+            aspect-ratio: 16 / 9;
+            background: #000;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .od-preview video {
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+        }
+
+        .od-preview .preview-overlay {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(0,0,0,0.4);
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .od-preview .preview-overlay:hover { opacity: 0; }
+
+        .od-play-btn {
+            width: 44px;
+            height: 44px;
+            background: var(--accent);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .od-play-btn::after {
+            content: '';
+            border-left: 13px solid var(--bg-primary);
+            border-top: 8px solid transparent;
+            border-bottom: 8px solid transparent;
+            margin-left: 3px;
+        }
+
+        .od-info { padding: 14px 16px; }
+
+        .od-filename {
+            font-size: 0.85rem;
+            font-weight: 600;
+            margin-bottom: 6px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .od-meta {
+            font-size: 0.75rem;
+            color: var(--text-secondary);
+            font-family: 'IBM Plex Mono', monospace;
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .od-size { color: var(--accent); }
+
+        .od-actions { display: flex; justify-content: flex-end; }
+
+        .btn-import {
+            background: var(--accent);
+            color: var(--bg-primary);
+            border: none;
+            padding: 6px 14px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-import:hover { background: var(--accent-dark); }
+        .btn-import:disabled { opacity: 0.5; cursor: not-allowed; }
+        .btn-import.importing { background: var(--bg-tertiary); color: var(--text-secondary); }
+        .btn-import.done { background: var(--success); color: #fff; }
 
         /* Footer */
         .footer {
             text-align: center;
-            padding: 40px 20px;
+            padding: 32px 20px;
             color: var(--text-secondary);
-            font-size: 0.85rem;
+            font-size: 0.8rem;
             font-family: 'IBM Plex Mono', monospace;
             border-top: 1px solid var(--border);
+            margin-top: 40px;
         }
 
         /* Responsive */
-        @media (max-width: 768px) {
-            .header h1 {
-                font-size: 2.2rem;
-            }
-
-            .videos-grid {
-                grid-template-columns: 1fr;
-                gap: 16px;
-            }
-
-            .modal-content {
-                border-radius: 0;
-            }
-
-            .modal-info {
-                padding: 20px;
-            }
-
-            .modal-title {
-                font-size: 1.3rem;
-            }
-
-            .stats {
-                grid-template-columns: 1fr;
-            }
+        @media (max-width: 640px) {
+            .header-title h1 { font-size: 2.4rem; }
+            .videos-grid, .od-grid { grid-template-columns: 1fr; }
+            .modal-content { border-radius: 0; }
         }
     </style>
 </head>
@@ -471,39 +526,76 @@
     <div class="container">
         <!-- Header -->
         <div class="header">
-            <h1>UFC5</h1>
-            <p>Fight Archive</p>
-        </div>
-
-        <!-- Stats -->
-        <div class="stats">
-            <div class="stat">
-                <div class="stat-value" id="totalVideos">0</div>
-                <div class="stat-label">Fights Recorded</div>
+            <div class="header-title">
+                <h1>UFC5</h1>
+                <p>Fight Archive</p>
             </div>
-            <div class="stat">
-                <div class="stat-value" id="totalSize">0 GB</div>
-                <div class="stat-label">Storage Used</div>
-            </div>
-            <div class="stat">
-                <div class="stat-value" id="lastUpdated">—</div>
-                <div class="stat-label">Last Updated</div>
+            <div class="header-actions">
+                <button class="btn btn-ghost btn-small" onclick="logout()">Logout</button>
             </div>
         </div>
 
-        <!-- Messages -->
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-btn active" onclick="showTab('library')">Library</button>
+            <button class="tab-btn" onclick="showTab('import')">Import from OneDrive</button>
+        </div>
+
+        <!-- Global messages -->
         <div id="messageContainer"></div>
 
-        <!-- Content -->
-        <div id="loading" class="loading">
-            <div class="spinner"></div>
+        <!-- ── Library tab ─────────────────────────────────────────────── -->
+        <div id="tab-library">
+            <div class="stats">
+                <div class="stat">
+                    <div class="stat-value" id="totalVideos">—</div>
+                    <div class="stat-label">Fights Recorded</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="totalSize">—</div>
+                    <div class="stat-label">Storage Used</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-value" id="lastUpdated">—</div>
+                    <div class="stat-label">Last Updated</div>
+                </div>
+            </div>
+
+            <div id="libraryLoading" class="loading"><div class="spinner"></div></div>
+            <div id="videosGrid" class="videos-grid" style="display:none;"></div>
+            <div id="emptyState" class="empty-state" style="display:none;">
+                <div class="empty-state-icon">📹</div>
+                <div class="empty-state-text">No fights recorded yet — import clips from OneDrive.</div>
+            </div>
         </div>
 
-        <div id="videosGrid" class="videos-grid" style="display: none;"></div>
+        <!-- ── Import tab ──────────────────────────────────────────────── -->
+        <div id="tab-import" style="display:none;">
+            <!-- Connection status -->
+            <div class="connection-panel">
+                <h3>Connections</h3>
+                <div class="connection-row" id="onedrive-connection-row">
+                    <div class="connection-label">
+                        <div class="dot dot-gray" id="od-dot"></div>
+                        <div>
+                            <div class="connection-name">OneDrive</div>
+                            <div class="connection-note" id="od-note">Checking…</div>
+                        </div>
+                    </div>
+                    <div class="connection-actions" id="od-actions"></div>
+                </div>
+            </div>
 
-        <div id="emptyState" class="empty-state" style="display: none;">
-            <div class="empty-state-icon">📹</div>
-            <div class="empty-state-text">No fights recorded yet. Check back soon!</div>
+            <!-- File browser -->
+            <div id="od-browser-area">
+                <div id="od-loading" class="loading" style="display:none;"><div class="spinner"></div></div>
+                <div id="od-error" style="display:none;"></div>
+                <div id="od-grid" class="od-grid"></div>
+                <div id="od-empty" class="empty-state" style="display:none;">
+                    <div class="empty-state-icon">🎮</div>
+                    <div class="empty-state-text">No video clips found in /Videos/Xbox Game DVR</div>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -530,183 +622,323 @@
         </div>
     </div>
 
-    <!-- Footer -->
-    <div class="footer">
-        AWS S3 • Express API • Make.com Automation • UFC5 Archive
-    </div>
+    <div class="footer">AWS S3 &bull; Express API &bull; UFC5 Archive</div>
 
     <script>
-        const API_BASE = window.location.origin === 'file://' 
-            ? 'http://localhost:3000' 
-            : window.location.origin;
+        const API = window.location.origin === 'file://' ? 'http://localhost:3000' : window.location.origin;
 
         let videos = [];
+        let odFiles = [];
+        let activeTab = 'library';
 
-        // Initialize
+        // ── Auth ─────────────────────────────────────────────────────────
+
         async function init() {
-            await loadVideos();
+            const res = await fetch(`${API}/api/auth/status`).catch(() => null);
+            if (!res || res.status === 401) {
+                window.location.href = '/login';
+                return;
+            }
+            loadLibrary();
         }
 
-        async function loadVideos() {
+        async function logout() {
+            await fetch(`${API}/api/auth/logout`, { method: 'POST' });
+            window.location.href = '/login';
+        }
+
+        // ── Tab navigation ────────────────────────────────────────────────
+
+        function showTab(name) {
+            activeTab = name;
+            document.querySelectorAll('.tab-btn').forEach((btn, i) => {
+                btn.classList.toggle('active', btn.textContent.toLowerCase().includes(name === 'library' ? 'library' : 'onedrive'));
+            });
+            document.getElementById('tab-library').style.display = name === 'library' ? '' : 'none';
+            document.getElementById('tab-import').style.display = name === 'import' ? '' : 'none';
+            if (name === 'import') loadOneDriveStatus();
+        }
+
+        // ── Library (S3) ──────────────────────────────────────────────────
+
+        async function loadLibrary() {
             try {
-                document.getElementById('loading').style.display = 'flex';
-                
-                const response = await fetch(`${API_BASE}/api/videos`);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                videos = await response.json();
-                renderVideos();
+                document.getElementById('libraryLoading').style.display = 'flex';
+                const res = await fetch(`${API}/api/videos`);
+                if (res.status === 401) { window.location.href = '/login'; return; }
+                if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                videos = await res.json();
+                renderLibrary();
                 updateStats();
-
-            } catch (error) {
-                console.error('Error loading videos:', error);
-                showMessage(`Error: ${error.message}`, 'error');
+            } catch (err) {
+                showMessage(`Failed to load library: ${err.message}`, 'error');
                 document.getElementById('emptyState').style.display = 'block';
             } finally {
-                document.getElementById('loading').style.display = 'none';
+                document.getElementById('libraryLoading').style.display = 'none';
             }
         }
 
-        function renderVideos() {
+        function renderLibrary() {
             const grid = document.getElementById('videosGrid');
-            const emptyState = document.getElementById('emptyState');
-
-            if (videos.length === 0) {
+            const empty = document.getElementById('emptyState');
+            if (!videos.length) {
                 grid.style.display = 'none';
-                emptyState.style.display = 'block';
+                empty.style.display = 'block';
+                return;
+            }
+            grid.innerHTML = videos.map((v, i) => `
+                <div class="video-card" onclick="playVideo(${i})">
+                    <div class="video-thumbnail"><div class="play-button"></div></div>
+                    <div class="video-info">
+                        <div class="video-title">${escHtml(v.filename)}</div>
+                        <div class="video-meta">
+                            <span>${formatDate(v.last_modified)}</span>
+                            <span class="video-size">${formatSize(v.size_bytes)}</span>
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+            grid.style.display = 'grid';
+            empty.style.display = 'none';
+        }
+
+        function updateStats() {
+            document.getElementById('totalVideos').textContent = videos.length;
+            const totalBytes = videos.reduce((s, v) => s + v.size_bytes, 0);
+            document.getElementById('totalSize').textContent = formatSize(totalBytes);
+            document.getElementById('lastUpdated').textContent = videos[0] ? formatDate(videos[0].last_modified) : '—';
+        }
+
+        async function playVideo(index) {
+            const v = videos[index];
+            try {
+                const res = await fetch(`${API}/api/video-url?key=${encodeURIComponent(v.key)}`);
+                if (!res.ok) throw new Error('Failed to get video URL');
+                const { url } = await res.json();
+
+                document.getElementById('modalTitle').textContent = v.filename;
+                document.getElementById('modalDate').textContent = formatDate(v.last_modified);
+                document.getElementById('modalSize').textContent = formatSize(v.size_bytes);
+
+                const player = document.getElementById('videoPlayer');
+                player.pause();
+                player.innerHTML = '';
+                const src = document.createElement('source');
+                src.src = url;
+                src.type = 'video/mp4';
+                player.appendChild(src);
+                player.load();
+
+                document.getElementById('playerModal').classList.add('active');
+                document.querySelectorAll('.video-card').forEach((c, i) => c.classList.toggle('active', i === index));
+            } catch (err) {
+                showMessage(err.message, 'error');
+            }
+        }
+
+        function closeModal() {
+            const player = document.getElementById('videoPlayer');
+            player.pause();
+            player.src = '';
+            document.getElementById('playerModal').classList.remove('active');
+            document.querySelectorAll('.video-card').forEach(c => c.classList.remove('active'));
+        }
+
+        // ── OneDrive ──────────────────────────────────────────────────────
+
+        async function loadOneDriveStatus() {
+            const dot = document.getElementById('od-dot');
+            const note = document.getElementById('od-note');
+            const actions = document.getElementById('od-actions');
+
+            try {
+                const res = await fetch(`${API}/api/onedrive/status`);
+                const data = await res.json();
+
+                if (data.connected) {
+                    dot.className = 'dot dot-green';
+                    note.textContent = 'Connected — auto-refresh active';
+                    actions.innerHTML = `
+                        <button class="btn btn-ghost btn-small" onclick="reconnectOneDrive()">Re-authenticate</button>
+                    `;
+                    loadOneDriveFiles();
+                } else {
+                    dot.className = 'dot dot-red';
+                    note.textContent = 'Not connected';
+                    actions.innerHTML = `
+                        <button class="btn btn-primary btn-small" onclick="connectOneDrive()">Connect OneDrive</button>
+                    `;
+                    clearOdBrowser();
+                }
+            } catch {
+                dot.className = 'dot dot-gray';
+                note.textContent = 'Status unknown';
+            }
+        }
+
+        async function connectOneDrive() {
+            try {
+                const res = await fetch(`${API}/api/oauth/authorize-url`);
+                const { authUrl } = await res.json();
+                window.location.href = authUrl;
+            } catch (err) {
+                showMessage('Failed to initiate OneDrive auth: ' + err.message, 'error');
+            }
+        }
+
+        function reconnectOneDrive() {
+            connectOneDrive();
+        }
+
+        async function loadOneDriveFiles() {
+            const loadEl = document.getElementById('od-loading');
+            const errorEl = document.getElementById('od-error');
+            const grid = document.getElementById('od-grid');
+            const empty = document.getElementById('od-empty');
+
+            loadEl.style.display = 'flex';
+            errorEl.style.display = 'none';
+            grid.innerHTML = '';
+            empty.style.display = 'none';
+
+            try {
+                const res = await fetch(`${API}/api/onedrive/files`);
+                if (!res.ok) {
+                    const data = await res.json().catch(() => ({}));
+                    if (data.needsAuth) {
+                        document.getElementById('od-dot').className = 'dot dot-red';
+                        document.getElementById('od-note').textContent = 'Token expired — re-authenticate';
+                        document.getElementById('od-actions').innerHTML = `
+                            <button class="btn btn-primary btn-small" onclick="connectOneDrive()">Re-authenticate</button>
+                        `;
+                        return;
+                    }
+                    throw new Error(data.error || `HTTP ${res.status}`);
+                }
+
+                odFiles = await res.json();
+                renderOdFiles();
+            } catch (err) {
+                errorEl.innerHTML = `<div class="message message-error">Failed to load OneDrive files: ${escHtml(err.message)}</div>`;
+                errorEl.style.display = 'block';
+            } finally {
+                loadEl.style.display = 'none';
+            }
+        }
+
+        function renderOdFiles() {
+            const grid = document.getElementById('od-grid');
+            const empty = document.getElementById('od-empty');
+
+            if (!odFiles.length) {
+                grid.innerHTML = '';
+                empty.style.display = 'block';
                 return;
             }
 
-            grid.innerHTML = videos.map((video, index) => `
-                <div class="video-card" onclick="playVideo(${index})">
-                    <div class="video-thumbnail">
-                        <div class="play-button"></div>
+            grid.innerHTML = odFiles.map((f, i) => `
+                <div class="od-card" id="od-card-${i}">
+                    <div class="od-preview">
+                        ${f.downloadUrl ? `
+                            <video preload="metadata" muted playsinline
+                                onmouseenter="this.play()" onmouseleave="this.pause();this.currentTime=0">
+                                <source src="${escHtml(f.downloadUrl)}" type="${escHtml(f.mimeType || 'video/mp4')}">
+                            </video>
+                            <div class="preview-overlay" onclick="this.style.display='none'">
+                                <div class="od-play-btn"></div>
+                            </div>
+                        ` : `<div style="display:flex;align-items:center;justify-content:center;height:100%;color:var(--text-secondary);font-size:0.8rem;">No preview</div>`}
                     </div>
-                    <div class="video-info">
-                        <div class="video-title">${video.filename}</div>
-                        <div class="video-meta">
-                            <div class="video-date">📅 ${formatDate(video.last_modified)}</div>
-                            <div class="video-size">💾 ${formatSize(video.size_bytes)}</div>
+                    <div class="od-info">
+                        <div class="od-filename" title="${escHtml(f.name)}">${escHtml(f.name)}</div>
+                        <div class="od-meta">
+                            <span>${formatDate(f.lastModified)}</span>
+                            <span class="od-size">${formatSize(f.size)}</span>
+                        </div>
+                        <div class="od-actions">
+                            <button class="btn-import" id="od-import-${i}" onclick="importFile(${i})">
+                                Import to S3
+                            </button>
                         </div>
                     </div>
                 </div>
             `).join('');
 
-            grid.style.display = 'grid';
-            emptyState.style.display = 'none';
+            empty.style.display = 'none';
         }
 
-        function updateStats() {
-            const totalVideos = videos.length;
-            const totalSize = videos.reduce((sum, v) => sum + v.size_bytes, 0);
-            const lastVideo = videos[0];
-
-            document.getElementById('totalVideos').textContent = totalVideos;
-            document.getElementById('totalSize').textContent = (totalSize / 1024 / 1024 / 1024).toFixed(2) + ' GB';
-            document.getElementById('lastUpdated').textContent = lastVideo ? formatDate(lastVideo.last_modified) : '—';
+        function clearOdBrowser() {
+            document.getElementById('od-grid').innerHTML = '';
+            document.getElementById('od-empty').style.display = 'none';
+            document.getElementById('od-loading').style.display = 'none';
+            document.getElementById('od-error').style.display = 'none';
         }
 
-        async function playVideo(index) {
-            const video = videos[index];
-            const modal = document.getElementById('playerModal');
-            const videoPlayer = document.getElementById('videoPlayer');
+        async function importFile(index) {
+            const file = odFiles[index];
+            const btn = document.getElementById(`od-import-${index}`);
+            if (!btn || btn.disabled) return;
+
+            btn.disabled = true;
+            btn.classList.add('importing');
+            btn.textContent = 'Importing…';
 
             try {
-                // Get presigned URL from backend
-                const response = await fetch(`${API_BASE}/api/video-url?key=${encodeURIComponent(video.key)}`);
-
-                if (!response.ok) {
-                    throw new Error('Failed to get video URL');
-                }
-
-                const data = await response.json();
-
-                // Update modal
-                document.getElementById('modalTitle').textContent = video.filename;
-                document.getElementById('modalDate').textContent = formatDate(video.last_modified);
-                document.getElementById('modalSize').textContent = formatSize(video.size_bytes);
-
-                // Clear previous video (MDN best practice)
-                videoPlayer.pause();
-                videoPlayer.innerHTML = '';
-
-                // Create source element (MDN recommended approach)
-                const source = document.createElement('source');
-                source.src = data.url;
-                source.type = 'video/mp4';
-                videoPlayer.appendChild(source);
-
-                // Add fallback text
-                videoPlayer.appendChild(document.createTextNode('Your browser does not support the video tag.'));
-
-                // Load the video
-                videoPlayer.load();
-
-                // Show modal
-                modal.classList.add('active');
-
-                // Mark card as active
-                document.querySelectorAll('.video-card').forEach((card, i) => {
-                    card.classList.toggle('active', i === index);
+                const res = await fetch(`${API}/api/onedrive/import`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fileId: file.id, filename: file.name }),
                 });
 
-            } catch (error) {
-                console.error('Error playing video:', error);
-                showMessage(`Error: ${error.message}`, 'error');
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error || 'Import failed');
+
+                btn.classList.remove('importing');
+                btn.classList.add('done');
+                btn.textContent = 'Saved to S3';
+
+                showMessage(`"${file.name}" imported successfully.`, 'success');
+
+                // Refresh library in background
+                if (activeTab === 'library') loadLibrary();
+
+            } catch (err) {
+                btn.disabled = false;
+                btn.classList.remove('importing');
+                btn.textContent = 'Import to S3';
+                showMessage(`Import failed: ${err.message}`, 'error');
             }
         }
 
-        function closeModal() {
-            const modal = document.getElementById('playerModal');
-            const videoPlayer = document.getElementById('videoPlayer');
-            videoPlayer.pause();
-            videoPlayer.src = '';
-            modal.classList.remove('active');
-            document.querySelectorAll('.video-card').forEach(card => {
-                card.classList.remove('active');
-            });
-        }
+        // ── Utilities ─────────────────────────────────────────────────────
 
         function showMessage(text, type = 'info') {
-            const container = document.getElementById('messageContainer');
-            const className = type === 'error' ? 'error-message' : 'success-message';
-            container.innerHTML = `<div class="${className}">${text}</div>`;
-            setTimeout(() => {
-                container.innerHTML = '';
-            }, 5000);
+            const el = document.getElementById('messageContainer');
+            el.innerHTML = `<div class="message message-${type}">${escHtml(text)}</div>`;
+            setTimeout(() => { el.innerHTML = ''; }, 6000);
         }
 
-        // Utility functions
-        function formatDate(dateString) {
-            const date = new Date(dateString);
-            return date.toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric'
-            });
+        function escHtml(str) {
+            if (!str) return '';
+            return String(str).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+        }
+
+        function formatDate(d) {
+            if (!d) return '—';
+            return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
         }
 
         function formatSize(bytes) {
-            if (bytes < 1024 * 1024) {
-                return (bytes / 1024).toFixed(1) + ' KB';
-            } else if (bytes < 1024 * 1024 * 1024) {
-                return (bytes / 1024 / 1024).toFixed(1) + ' MB';
-            } else {
-                return (bytes / 1024 / 1024 / 1024).toFixed(2) + ' GB';
-            }
+            if (!bytes) return '—';
+            if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+            if (bytes < 1024 ** 3) return (bytes / 1024 / 1024).toFixed(1) + ' MB';
+            return (bytes / 1024 ** 3).toFixed(2) + ' GB';
         }
 
-        // Keyboard close
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape') {
-                closeModal();
-            }
-        });
+        // ── Event listeners ───────────────────────────────────────────────
 
-        // Load on page load
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') closeModal(); });
+
         window.addEventListener('load', init);
     </script>
 </body>

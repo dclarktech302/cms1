@@ -1,115 +1,131 @@
-import * as msal from '@azure/msal-node';
+import axios from 'axios';
 
-// ─── MSAL Config ──────────────────────────────────────────────────────────────
+const TENANT_ID = process.env.ONEDRIVE_TENANT_ID || process.env.AZURE_TENANT_ID || 'common';
+const TOKEN_URL = `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/token`;
+const SCOPES = 'https://graph.microsoft.com/Files.ReadWrite https://graph.microsoft.com/Files.ReadWrite.All offline_access';
 
-const msalConfig = {
-    auth: {
-        clientId: process.env.AZURE_CLIENT_ID,
-        clientSecret: process.env.AZURE_CLIENT_SECRET,
-        authority: `https://login.microsoftonline.com/${process.env.AZURE_TENANT_ID || 'common'}`,
-    },
-};
+// ─── Vercel env var persistence ───────────────────────────────────────────────
 
-const cca = new msal.ConfidentialClientApplication(msalConfig);
+async function writeVercelEnv(key, value) {
+    // Always update in-process so the current request benefits immediately
+    process.env[key] = value;
 
-// In-memory token cache (persists for process lifetime)
-// For production: swap with Redis or a database store
-let cachedTokens = {
-    accessToken: process.env.ONEDRIVE_ACCESS_TOKEN || null,
-    refreshToken: process.env.ONEDRIVE_REFRESH_TOKEN || null,
-    expiresOn: null,
-};
+    const projectId = process.env.VERCEL_PROJECT_ID;
+    const apiToken = process.env.VERCEL_API_TOKEN;
+    if (!projectId || !apiToken) return; // local dev: in-memory only
 
-// ─── Get Auth Code URL (step 1 of OAuth flow) ─────────────────────────────────
+    try {
+        const listRes = await axios.get(
+            `https://api.vercel.com/v9/projects/${projectId}/env`,
+            { headers: { Authorization: `Bearer ${apiToken}` } }
+        );
+        const envVar = listRes.data.envs.find(e => e.key === key);
 
-export async function getAuthCodeUrl(redirectUri) {
-    const authCodeUrlParams = {
-        scopes: [
-            'https://graph.microsoft.com/Files.ReadWrite',
-            'https://graph.microsoft.com/Files.ReadWrite.All',
-            'offline_access',
-        ],
-        redirectUri,
-        prompt: 'consent',
-    };
-    return await cca.getAuthCodeUrl(authCodeUrlParams);
+        if (envVar) {
+            await axios.patch(
+                `https://api.vercel.com/v9/projects/${projectId}/env/${envVar.id}`,
+                { value },
+                { headers: { Authorization: `Bearer ${apiToken}` } }
+            );
+        } else {
+            await axios.post(
+                `https://api.vercel.com/v9/projects/${projectId}/env`,
+                { key, value, type: 'encrypted', target: ['production', 'preview', 'development'] },
+                { headers: { Authorization: `Bearer ${apiToken}` } }
+            );
+        }
+    } catch (err) {
+        console.error(`⚠️  Failed to persist ${key} to Vercel:`, err.message);
+    }
 }
 
-// ─── Exchange Code for Tokens (step 2 of OAuth flow) ─────────────────────────
+async function persistTokens(accessToken, refreshToken, expiresIn) {
+    const expiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+    await Promise.all([
+        writeVercelEnv('ONEDRIVE_ACCESS_TOKEN', accessToken),
+        writeVercelEnv('ONEDRIVE_REFRESH_TOKEN', refreshToken),
+        writeVercelEnv('ONEDRIVE_TOKEN_EXPIRES_AT', expiresAt),
+    ]);
+    console.log('✅ OneDrive tokens persisted');
+}
+
+// ─── OAuth helpers ────────────────────────────────────────────────────────────
+
+export function getAuthCodeUrl(redirectUri) {
+    // Encode redirectUri in state so the callback can reuse the exact same value
+    const state = Buffer.from(redirectUri).toString('base64');
+    const params = new URLSearchParams({
+        client_id: process.env.AZURE_CLIENT_ID,
+        response_type: 'code',
+        redirect_uri: redirectUri,
+        scope: SCOPES,
+        response_mode: 'query',
+        prompt: 'consent',
+        state,
+    });
+    return `https://login.microsoftonline.com/${TENANT_ID}/oauth2/v2.0/authorize?${params}`;
+}
 
 export async function exchangeCodeForTokens(code, redirectUri) {
-    const tokenRequest = {
-        code,
-        scopes: [
-            'https://graph.microsoft.com/Files.ReadWrite',
-            'https://graph.microsoft.com/Files.ReadWrite.All',
-            'offline_access',
-        ],
-        redirectUri,
-    };
+    const res = await axios.post(
+        TOKEN_URL,
+        new URLSearchParams({
+            client_id: process.env.AZURE_CLIENT_ID,
+            client_secret: process.env.AZURE_CLIENT_SECRET,
+            code,
+            redirect_uri: redirectUri,
+            grant_type: 'authorization_code',
+            scope: SCOPES,
+        }).toString(),
+        { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+    );
 
-    const response = await cca.acquireTokenByCode(tokenRequest);
-
-    // Cache in memory
-    cachedTokens = {
-        accessToken: response.accessToken,
-        refreshToken: response.account?.refreshToken || null,
-        expiresOn: response.expiresOn,
-    };
-
-    console.log('✅ Tokens acquired and cached');
-    return cachedTokens;
+    const { access_token, refresh_token, expires_in } = res.data;
+    await persistTokens(access_token, refresh_token, expires_in);
+    return { accessToken: access_token, refreshToken: refresh_token };
 }
 
-// ─── Get Valid Access Token (auto-refresh if expired) ─────────────────────────
+// ─── Token access (auto-refresh) ─────────────────────────────────────────────
 
 export async function getAccessToken() {
-    const now = new Date();
-    const expiresOn = cachedTokens.expiresOn ? new Date(cachedTokens.expiresOn) : null;
-    const isExpired = !expiresOn || expiresOn <= now;
+    const accessToken = process.env.ONEDRIVE_ACCESS_TOKEN;
+    const refreshToken = process.env.ONEDRIVE_REFRESH_TOKEN;
+    const expiresAt = process.env.ONEDRIVE_TOKEN_EXPIRES_AT;
 
-    // Token is still valid
-    if (cachedTokens.accessToken && !isExpired) {
-        return cachedTokens.accessToken;
-    }
-
-    // Try refresh token
-    if (cachedTokens.refreshToken) {
-        try {
-            console.log('🔄 Refreshing access token...');
-            // MSAL handles refresh internally via acquireTokenSilent
-            // We use the cached account or fall back to refresh token grant
-            const silentRequest = {
-                scopes: [
-                    'https://graph.microsoft.com/Files.ReadWrite',
-                    'https://graph.microsoft.com/Files.ReadWrite.All',
-                    'offline_access',
-                ],
-                forceRefresh: true,
-            };
-
-            // Try to get accounts
-            const accounts = await cca.getTokenCache().getAllAccounts();
-            if (accounts.length > 0) {
-                silentRequest.account = accounts[0];
-                const response = await cca.acquireTokenSilent(silentRequest);
-                cachedTokens.accessToken = response.accessToken;
-                cachedTokens.expiresOn = response.expiresOn;
-                console.log('✅ Token refreshed');
-                return cachedTokens.accessToken;
-            }
-        } catch (err) {
-            console.warn('⚠️  Silent refresh failed:', err.message);
+    // Return existing token if still valid with 60s buffer
+    if (accessToken && expiresAt) {
+        if (new Date(expiresAt) > new Date(Date.now() + 60_000)) {
+            return accessToken;
         }
     }
 
-    // Fall back to env token (set manually via Vercel env vars after OAuth)
-    if (process.env.ONEDRIVE_ACCESS_TOKEN) {
-        console.log('ℹ️  Using ONEDRIVE_ACCESS_TOKEN from environment');
-        return process.env.ONEDRIVE_ACCESS_TOKEN;
+    if (!refreshToken) {
+        throw new Error('OneDrive not connected. Authenticate via the dashboard.');
     }
 
-    throw new Error(
-        'No valid token available. Complete OAuth flow at /api/oauth/authorize-url'
-    );
+    console.log('🔄 Refreshing OneDrive access token...');
+    try {
+        const res = await axios.post(
+            TOKEN_URL,
+            new URLSearchParams({
+                client_id: process.env.AZURE_CLIENT_ID,
+                client_secret: process.env.AZURE_CLIENT_SECRET,
+                refresh_token: refreshToken,
+                grant_type: 'refresh_token',
+                scope: SCOPES,
+            }).toString(),
+            { headers: { 'Content-Type': 'application/x-www-form-urlencoded' } }
+        );
+
+        const { access_token, refresh_token: new_refresh, expires_in } = res.data;
+        await persistTokens(access_token, new_refresh, expires_in);
+        return access_token;
+    } catch (err) {
+        const detail = err.response?.data?.error_description || err.message;
+        throw new Error(`Token refresh failed: ${detail}`);
+    }
+}
+
+export function isOneDriveConnected() {
+    return !!process.env.ONEDRIVE_REFRESH_TOKEN;
 }
